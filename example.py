@@ -7,7 +7,7 @@ my_proxy = None
 user_converter = Pdf2XlsxConverter()
 
 # conversion of the single pdf file
-user_converter.SetFiles(pdf_files_paths = "C:\\USER_PDF_FILES\\example_1.pdf", output_path = "C:\\USER_XLSX_FILES\\")
+user_converter.SetFiles(pdf_files_paths = "C:\\USER_PDF_FILES\\example_1.pdf", output_path = "C:\\USER_EXCEL_FILES\\")
 user_converter.WebConvert(user_proxy = my_proxy)
 
 # conversion of the multiple pdf files

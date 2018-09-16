@@ -2,6 +2,8 @@ import requests
 import copy
 import os
 import time
+import string
+import random
 
 """
 Pdf2XlsxConverter class, which can be used for a conversion of pdf files into xlsx (MS Excel 2010) files
@@ -17,12 +19,13 @@ class Pdf2XlsxConverter:
         self.__pdf_paths = [] # absolute paths of the pdf files
 
     # set input data
-    def SetFiles(self, pdf_files_paths, output_path = None):
+    def SetFiles(self, pdf_files_paths, output_path = "."):
 
         self.__excel_paths.clear()
 
-        if output_path == None:
-            self.__output_path = os.getcwd() + "\\" # default directory is an executable script's directory
+        # add back slash if it is necessary
+        if output_path[-1] != "\\":
+            self.__output_path = output_path + "\\"
         else:
             self.__output_path = output_path
 
@@ -33,9 +36,25 @@ class Pdf2XlsxConverter:
         elif type(pdf_files_paths).__name__ == "list": # multiple pdf files
             self.__pdf_paths = copy.deepcopy(pdf_files_paths)
 
+    # generate random string
+    @staticmethod
+    def GetRandomString(length = 12, chars = string.ascii_uppercase + string.digits):
+        return "".join(random.choice(chars) for _ in range(length))
+
+    # rename pdf file
+    @staticmethod
+    def RenameFile(file_path, new_file_name):
+        os.rename(file_path, os.path.dirname(file_path) + "\\" + new_file_name + os.path.splitext(file_path)[1])
+
+    # check file name for cyrillic symbols
+    @staticmethod
+    def IsCyrillic(text):
+        cyr_letters = set("абвгдеёжзийклмнопрстуфхцчшщъыьэюя")
+        return cyr_letters.intersection(text.lower()) != set()
+
     # convert pdf files into xlsx files using web, namely www.pdftoexcel.com
     # arguments:
-    # user_proxy - user's proxy
+    # user_proxy - user proxy
     # max_waiting_time - maximum time (in sec) to wait for the end of the conversion process
     # checking_time - interval (in sec) to delay the conversion
     def WebConvert(self, user_proxy = None, max_waiting_time = 60, checking_time = 3):
@@ -47,11 +66,35 @@ class Pdf2XlsxConverter:
 
         for pdf_file_path in self.__pdf_paths:
 
-            print("Conversion of the file {}\n".format(pdf_file_path))
-            user_file = {"Filedata": open(pdf_file_path, "rb")}
+            print("Conversion of the file {}".format(pdf_file_path))
+            file_info = {"old_name": os.path.splitext(os.path.basename(pdf_file_path))[0],
+                         "new_name": "",
+                         "path": os.path.dirname(pdf_file_path) + "\\",
+                         "is_cyr": False}
+
+            if self.IsCyrillic(pdf_file_path) == True:
+
+                file_info["is_cyr"] = True
+                file_info["new_name"] = self.GetRandomString()
+                self.RenameFile(pdf_file_path, file_info["new_name"])
+                pdf_file = open(file_info["path"] + file_info["new_name"] + ".pdf", "rb")
+                user_file = {"Filedata": pdf_file}
+
+            else:
+
+                pdf_file = open(pdf_file_path, "rb")
+                user_file = {"Filedata": pdf_file}
 
             # uploading POST request
-            uploading_resp = requests.post(url = "https://www.pdftoexcel.com/upload.instant.php", proxies = user_proxy, files = user_file).json()
+            try:
+                uploading_resp = requests.post(url = "https://www.pdftoexcel.com/upload.instant.php", proxies = user_proxy, files = user_file).json()
+            except Exception as e:
+
+                pdf_file.close()
+                if file_info["is_cyr"] == True:
+                    self.RenameFile(file_info["path"] + file_info["new_name"] + ".pdf", file_info["old_name"])
+                print("Error: ", e)
+                continue
 
             if uploading_resp["status"] == "1": # if pdf file was uploaded successfully...
 
@@ -75,22 +118,24 @@ class Pdf2XlsxConverter:
                 downloading_resp = requests.get("https://www.pdftoexcel.com/fetch.php?id=" + res_file_id, proxies = user_proxy)
 
                 # create output file's path
-                self.__excel_paths.append(self.__output_path + os.path.splitext(os.path.basename(pdf_file_path))[0] + ".xlsx")
+                self.__excel_paths.append(self.__output_path + file_info["old_name"] + ".xlsx")
 
                 # write data to the file
                 with open(self.__excel_paths[-1], "wb") as f:
                     for chunk in downloading_resp.iter_content(100000):
                         f.write(chunk)
 
-                print("Success!\n")
+                pdf_file.close()
+                if file_info["is_cyr"] == True:
+                    self.RenameFile(file_info["path"] + file_info["new_name"] + ".pdf", file_info["old_name"])
+                print("Success!")
 
             else: # if pdf file was uploaded unsuccessfully...
 
-                print("Failure!\n")
+                pdf_file.close()
+                if file_info["is_cyr"] == True:
+                    self.RenameFile(file_info["path"] + file_info["new_name"] + ".pdf", file_info["old_name"])
+                print("Failure!")
                 continue
 
-            # close input pdf file
-            input_file = open(pdf_file_path, "r")
-            input_file.close()
-
-        print("Conversion has been completed!\n")
+        print("Conversion has been completed!")
